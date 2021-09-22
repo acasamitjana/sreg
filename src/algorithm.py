@@ -232,7 +232,6 @@ def st2_L1(phi, obs_mask, w, N):
 
                     for it_dim in range(3):
 
-                        pdb.set_trace()
                         # Set objective
                         c_lp = np.concatenate((np.ones((n_control,)), np.zeros((N,))), axis=0)
 

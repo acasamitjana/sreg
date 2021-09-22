@@ -157,8 +157,7 @@ for it_subject, subject in enumerate(subject_list):
         # del labels, labels_deformed, flow
         #
 
-
     template = np.median(mri_list, axis=0)
     img = nib.Nifti1Image(template, subject.vox2ras0)
-    nib.save(img, subject.linear_template)
+    nib.save(img, subject.nonlinear_template)
     print('[' + str(subject.id) + ' - DEFORM] Total Elapsed time: ' + str(time.time() - t_init))
