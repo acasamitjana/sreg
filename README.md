@@ -19,9 +19,9 @@ http://cmictig.cs.ucl.ac.uk/wiki/index.php/NiftyReg_documentation
   - _setup.py_: original absolute paths are specified here. Please, update this according to your settings. Here, at least two directories should exist and subject id and filenames should be consistent across them:
      - IMAGES_DIR: each subject is contained in a separated folder containting all (time)points. The folder name is the subject_id.
      - SEGMENTATION_DIR: each subject is contained in a separated folder containting all (time)points. The folder name is the subject_id.
- - **Run linear registration:
+ - **Run linear registration**
    - _scripts/run_linear_registration.sh_: this script will run over all subjects available in IMAGES_DIR. It also accepts a list of arguments (SUBJECT_ID) to run it over a subset (1, ..., N) subjects
- - **Run non-linear registration:
+ - **Run non-linear registration**
    - _scripts/run_nonlinear_registration.sh_: this script will run over all subjects available in ALGORITHM_DIR_LINEAL/images (subjects processed using the linear registration script). It also accepts a list of arguments (SUBJECT_ID) to run it over a subset (1, ..., N) subjects.
 
 
