@@ -25,10 +25,12 @@ http://cmictig.cs.ucl.ac.uk/wiki/index.php/NiftyReg_documentation
 ## Code updates
 
 22 September 2021:
+- Update to python 3.8.11 and scipy library to use open source linear programming packages.
+
+21 September 2021:
 - Initial commit
 
-22 September 2021:
-- Update to python 3.8.11 and scipy library to use open source linear programming packages.
+
 
 
 ## Citation
