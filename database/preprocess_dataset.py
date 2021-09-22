@@ -19,7 +19,6 @@ subject_list = arguments.subjects
 
 create_results_dir(REGISTRATION_DIR, subdirs=['resampled', 'segmentations', 'masks', 'images', 'Linear', 'Nonlinear'])
 
-
 print('\n\n\n\n\n')
 print('# ---------------------------------------------------------------------------------------- #')
 print('# Preprocessing initial dataset with images and segmentations (e.g., FreeSurfer, Synthseg) #')
