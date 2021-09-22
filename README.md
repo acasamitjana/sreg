@@ -5,10 +5,7 @@ This repository performs linear and nonlinear registration between a set of poin
 
 ### Requirements:
 **Python** <br />
-The code run on python v3.6.9 and several external libraries listed under requirements.txt
-
-**Gurobi package** <br />
-Gurobi optimizer is used to solve the linear program. [You can download it from here](https://www.gurobi.com/documentation/9.1/quickstart_mac/cs_using_pip_to_install_gr.html) and [create an academic free license from here](https://www.gurobi.com/documentation/9.1/quickstart_mac/creating_a_new_academic_li.html#subsection:createacademiclicense)
+The code run on python v3.8.11 and several external libraries listed under requirements.txt
 
 **NiftyReg package** <br />
 Needed to run the algorithm using NiftyReg as base registration algorithm. 
@@ -28,7 +25,12 @@ http://cmictig.cs.ucl.ac.uk/wiki/index.php/NiftyReg_documentation
 ## Code updates
 
 22 September 2021:
+- Update to python 3.8.11 and scipy library to use open source linear programming packages.
+
+21 September 2021:
 - Initial commit
+
+
 
 
 ## Citation
