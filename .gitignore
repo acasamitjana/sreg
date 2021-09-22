@@ -1,0 +1,10 @@
+# Nifty files
+*.nii.gz
+*.nii
+
+# PyCharm files
+*pyc
+__pycache__
+
+# Local files
+setup.py
