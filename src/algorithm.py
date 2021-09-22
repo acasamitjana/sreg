@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import scipy.sparse as sp
 from scipy.ndimage import binary_dilation
+from scipy.optimize import linprog
 import gurobipy as gp
 import nibabel as nib
 from skimage.transform import resize
@@ -162,17 +163,6 @@ def st2_lineal_pytorch(logR, timepoints, n_epochs, subject_shape, cost, lr, resu
 
     return T.cpu().detach().numpy()
 
-# Gaussian: l2-loss lineal
-def st2_L2_lineal(phi, W, N):
-
-    #Initialize transforms
-    # Tres = np.zeros(phi.shape[:4] + (N,))
-    print('    Computing weights and updating the transforms')
-    precision = 1e-6
-    lambda_control = np.linalg.inv((W.T @ W) + precision * np.eye(N)) @ W.T
-    Tres = lambda_control @ phi.T
-
-    return Tres.T
 
 # Gaussian: l2-loss no masks
 def st2_L2_global(phi, W, N):
@@ -222,43 +212,6 @@ def st2_L2(phi, obs_mask, w, N):
 
     return Tres
 
-# Laplacian: l1-loss lineal
-def st2_L1_lineal(phi, w, N):
-
-    num_params = phi.shape[0]
-    n_control = phi.shape[1]
-    Tres = np.zeros((num_params, N))
-    for it_param in range(num_params):
-        model = gp.Model('LP')
-        model.setParam('OutputFlag', False)
-        model.setParam('Method', 1)
-
-        # Set the parameters
-        params = model.addMVar(shape=n_control + N, lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='x')
-
-        # Set objective
-        c_lp = np.concatenate((np.ones((n_control,)), np.zeros((N,))), axis=0)
-        model.setObjective(c_lp @ params, gp.GRB.MINIMIZE)
-
-        # Set the inequality
-        A_lp = np.zeros((2 * n_control, n_control + N))
-        A_lp[:n_control, :n_control] = -np.eye(n_control)
-        A_lp[:n_control, n_control:] = -w
-        A_lp[n_control:, :n_control] = -np.eye(n_control)
-        A_lp[n_control:, n_control:] = w
-        A_lp = sp.csr_matrix(A_lp)
-
-        reg = np.reshape(phi[it_param], (n_control,))
-        b_lp = np.concatenate((-reg, reg), axis=0)
-
-        model.addConstr(A_lp @ params <= b_lp, name="c")
-
-        model.optimize()
-
-        Tres[it_param] = params.X[n_control:]
-
-    return Tres
-
 
 # Laplacian: l1-loss
 def st2_L1(phi, obs_mask, w, N):
@@ -278,16 +231,10 @@ def st2_L1(phi, obs_mask, w, N):
                     n_control = len(index_obs)
 
                     for it_dim in range(3):
-                        model = gp.Model('LP')
-                        model.setParam('OutputFlag', False)
-                        model.setParam('Method', 1)
 
-                        # Set the parameters
-                        params = model.addMVar(shape=n_control + N, lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='x')
-
+                        pdb.set_trace()
                         # Set objective
                         c_lp = np.concatenate((np.ones((n_control,)), np.zeros((N,))), axis=0)
-                        model.setObjective(c_lp @ params, gp.GRB.MINIMIZE)
 
                         # Set the inequality
                         A_lp = np.zeros((2 * n_control, n_control + N))
@@ -300,11 +247,37 @@ def st2_L1(phi, obs_mask, w, N):
                         reg = np.reshape(phi_control[it_dim], (n_control,))
                         b_lp = np.concatenate((-reg, reg), axis=0)
 
-                        model.addConstr(A_lp @ params <= b_lp, name="c")
+                        result = linprog(c_lp, A_lp, b_lp, bounds=(None, None), method='highs-ds')
 
-                        model.optimize()
+                        Tres[it_dim, it_control_row, it_control_col, it_control_depth] = result.x[n_control:]
 
-                        Tres[it_dim, it_control_row, it_control_col, it_control_depth] = params.X[n_control:]
+                        # model = gp.Model('LP')
+                        # model.setParam('OutputFlag', False)
+                        # model.setParam('Method', 1)
+                        #
+                        # # Set the parameters
+                        # params = model.addMVar(shape=n_control + N, lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name='x')
+                        #
+                        # # Set objective
+                        # c_lp = np.concatenate((np.ones((n_control,)), np.zeros((N,))), axis=0)
+                        # model.setObjective(c_lp @ params, gp.GRB.MINIMIZE)
+                        #
+                        # # Set the inequality
+                        # A_lp = np.zeros((2 * n_control, n_control + N))
+                        # A_lp[:n_control, :n_control] = -np.eye(n_control)
+                        # A_lp[:n_control, n_control:] = -w_control
+                        # A_lp[n_control:, :n_control] = -np.eye(n_control)
+                        # A_lp[n_control:, n_control:] = w_control
+                        # A_lp = sp.csr_matrix(A_lp)
+                        #
+                        # reg = np.reshape(phi_control[it_dim], (n_control,))
+                        # b_lp = np.concatenate((-reg, reg), axis=0)
+                        #
+                        # model.addConstr(A_lp @ params <= b_lp, name="c")
+                        #
+                        # model.optimize()
+                        #
+                        # Tres[it_dim, it_control_row, it_control_col, it_control_depth] = params.X[n_control:]
 
     return Tres
 
