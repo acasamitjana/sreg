@@ -13,7 +13,7 @@ http://cmictig.cs.ucl.ac.uk/wiki/index.php/NiftyReg_documentation
 
 ### Run the code
 - **Set-up configuration files** 
-  - _setup.py_: original absolute paths are specified here. Please, update this according to your settings. Here, at least two directories should exist and subject id and filenames should be consistent across them:
+  - _setup.py_: create this file following the setup_example.py and according to your local machine and data directories. It contains the absolute paths to input data and the all the generated output registration paths. Here, at least two directories must exist and subject id and filenames should be consistent across them:
      - IMAGES_DIR: each subject is contained in a separated folder containting all (time)points. The folder name is the subject_id.
      - SEGMENTATION_DIR: each subject is contained in a separated folder containting all (time)points. The folder name is the subject_id.
  - **Run linear registration**
