@@ -201,7 +201,8 @@ class DataLoader(object):
 
     def _initialize_dataset(self, sid_list=None, linear=False):
 
-        subjects = os.listdir(IMAGES_DIR)
+        subjects = os.listdir(IMAGES_DIR) if not linear else os.listdir(join(ALGORITHM_DIR_LINEAR, 'image'))
+
         for sbj in subjects:
             if sid_list is not None:
                 if sbj not in sid_list:

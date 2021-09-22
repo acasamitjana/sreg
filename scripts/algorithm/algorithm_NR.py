@@ -81,48 +81,48 @@ for it_subject, subject in enumerate(subject_list):
 
     ####################################################################################################
     ####################################################################################################
-    # print('[' + str(subject.id) + ' - Init Graph] Reading SVFs ...')
-    # t_init = time.time()
-    #
-    # graph_structure = init_st2(timepoints, input_dir, cp_shape, se=np.ones((mdil, mdil, mdil)))
-    #
-    # R, M, W, NK = graph_structure
-    # print('[' + str(subject.id) + ' - Init Graph] Total Elapsed time: ' + str(time.time() - t_init))
-    #
-    # print('[' + str(subject.id) + ' - ALGORITHM] Running the algorithm ...')
-    # t_init = time.time()
-    # if cost == 'l2':
-    #     Tres = st2_L2_global(R, W, len(timepoints))
-    #
-    # else:
-    #     Tres = st2_L1(R, M, W, len(timepoints))
-    #
-    # for it_tp, tp in enumerate(timepoints):
-    #     img = nib.Nifti1Image(Tres[..., it_tp], subject.vox2ras0)
-    #     nib.save(img, join(results_dir_sbj, tp.id + '.svf.nii.gz'))
-    #
-    #
-    # print('[' + str(subject.id) + ' - ALGORITHM] Total Elapsed time: ' + str(time.time() - t_init))
-    #
-    # ####################################################################################################
-    # ####################################################################################################
-    #
-    # print('[' + str(subject.id) + ' - INTEGRATION] Computing deformation field ... ')
-    # t_init = time.time()
-    # for it_tp, tp in enumerate(timepoints):
-    #
-    #
-    #     flow = algorithm_utils.integrate_NR(Tres[..., it_tp], subject_shape)
-    #     img = nib.Nifti1Image(flow, subject.vox2ras0)
-    #     nib.save(img, join(results_dir_sbj, tp.id + '.flow.nii.gz'))
-    #     del flow
-    #
-    #     # refFile = tp.linear_template
-    #     # nonlinearSVF = join(results_dir_sbj, tp.id + '.svf.nii.gz')
-    #     # nonlinearField = join(results_dir_sbj, tp.id + '.def.nii.gz')
-    #     # subprocess.call([TRANSFORMcmd, '-ref', refFile, '-disp', nonlinearSVF, nonlinearField])
-    #
-    # print('[' + str(subject.id) + ' - INTEGRATION] Total Elapsed time: ' + str(time.time() - t_init))
+    print('[' + str(subject.id) + ' - Init Graph] Reading SVFs ...')
+    t_init = time.time()
+
+    graph_structure = init_st2(timepoints, input_dir, cp_shape, se=np.ones((mdil, mdil, mdil)))
+
+    R, M, W, NK = graph_structure
+    print('[' + str(subject.id) + ' - Init Graph] Total Elapsed time: ' + str(time.time() - t_init))
+
+    print('[' + str(subject.id) + ' - ALGORITHM] Running the algorithm ...')
+    t_init = time.time()
+    if cost == 'l2':
+        Tres = st2_L2_global(R, W, len(timepoints))
+
+    else:
+        Tres = st2_L1(R, M, W, len(timepoints))
+
+    for it_tp, tp in enumerate(timepoints):
+        img = nib.Nifti1Image(Tres[..., it_tp], subject.vox2ras0)
+        nib.save(img, join(results_dir_sbj, tp.id + '.svf.nii.gz'))
+
+
+    print('[' + str(subject.id) + ' - ALGORITHM] Total Elapsed time: ' + str(time.time() - t_init))
+
+    ####################################################################################################
+    ####################################################################################################
+
+    print('[' + str(subject.id) + ' - INTEGRATION] Computing deformation field ... ')
+    t_init = time.time()
+    for it_tp, tp in enumerate(timepoints):
+
+
+        flow = algorithm_utils.integrate_NR(Tres[..., it_tp], subject_shape)
+        img = nib.Nifti1Image(flow, subject.vox2ras0)
+        nib.save(img, join(results_dir_sbj, tp.id + '.flow.nii.gz'))
+        del flow
+
+        # refFile = tp.linear_template
+        # nonlinearSVF = join(results_dir_sbj, tp.id + '.svf.nii.gz')
+        # nonlinearField = join(results_dir_sbj, tp.id + '.def.nii.gz')
+        # subprocess.call([TRANSFORMcmd, '-ref', refFile, '-disp', nonlinearSVF, nonlinearField])
+
+    print('[' + str(subject.id) + ' - INTEGRATION] Total Elapsed time: ' + str(time.time() - t_init))
 
 
     ####################################################################################################
@@ -157,37 +157,6 @@ for it_subject, subject in enumerate(subject_list):
         # del labels, labels_deformed, flow
         #
 
-
-
-        # refFile = tp.linear_template
-        # floFile = tp.image_linear_path
-        # nonlinearSVF = join(results_dir_sbj, tp.id + '.svf.nii.gz')
-        # outputFile = tp.image_nonlinear_path
-        # subprocess.call([
-        #     REScmd, '-ref', refFile, '-flo', floFile, '-trans', nonlinearSVF, '-res',
-        #     outputFile, '-inter', '1', '-voff'
-        # ])
-        #
-        # floFile = tp.mask_linear_path
-        # outputFile = tp.mask_nonlinear_path
-        # subprocess.call([
-        #     REScmd, '-ref', refFile, '-flo', floFile, '-trans', nonlinearSVF, '-res',
-        #     outputFile, '-inter', '0', '-voff'
-        # ])
-        #
-        # floFile = tp.mask_dilated_linear_path
-        # outputFile = tp.mask_dilated_nonlinear_path
-        # subprocess.call([
-        #     REScmd, '-ref', refFile, '-flo', floFile, '-trans', nonlinearSVF, '-res',
-        #     outputFile, '-inter', '0', '-voff'
-        # ])
-        #
-        # floFile = tp.seg_linear_path
-        # outputFile = tp.seg_nonlinear_path
-        # subprocess.call([
-        #     REScmd, '-ref', refFile, '-flo', floFile, '-trans', nonlinearSVF, '-res',
-        #     outputFile, '-inter', '0', '-voff'
-        # ])
 
     template = np.median(mri_list, axis=0)
     img = nib.Nifti1Image(template, subject.vox2ras0)
