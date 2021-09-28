@@ -131,6 +131,9 @@ class Subject(object):
         self.linear_template = join(self.results_dirs.get_dir('linear_data'),  'linear_template.nii.gz')
         self.nonlinear_template = join(self.results_dirs.get_dir('nonlinear_data'), 'nonlinear_template.nii.gz')
 
+        self.linear_template_orig = join(self.results_dirs.get_dir('nonlinear_data'), 'linear_template.orig.nii.gz')
+        self.nonlinear_template_orig = join(self.results_dirs.get_dir('nonlinear_data'), 'nonlinear_template.orig.nii.gz')
+
     def set_timepoint(self, tid, file_extension):
         self.slice_dict[tid] = Timepoint(tid, self.sid, file_extension=file_extension)
 
@@ -179,6 +182,7 @@ class Subject_linear(Subject):
     def image_shape(self):
         proxy = nib.load(self.linear_template)
         return proxy.shape
+
 
 class DataLoader(object):
     def __init__(self, **kwargs):

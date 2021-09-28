@@ -4,7 +4,8 @@ import numpy as np
 import nibabel as nib
 
 from scipy.interpolate import interpn, RegularGridInterpolator as rgi
-from scipy.ndimage import gaussian_filter
+from skimage.transform import resize
+
 
 def create_template_space(linear_image_list):
 
@@ -100,7 +101,7 @@ def interpolate2D(image, mosaic, mode='bilinear'):
 
     return output
 
-def interpolate3D(image, mosaic, vox2ras0=None, mode='linear'):
+def interpolate3D(image, mosaic, vox2ras0=None, resized_shape=None, mode='linear'):
     '''
 
     :param image: np.array or list of np.arrays.
@@ -124,10 +125,14 @@ def interpolate3D(image, mosaic, vox2ras0=None, mode='linear'):
     for im in image:
         my_interpolation_function = rgi((x,y,z), im, method=mode, bounds_error=False, fill_value=0)
         im_resampled = my_interpolation_function(mosaic)
+        if resized_shape is not None:
+            im_resampled = im_resampled.reshape(resized_shape)
         output.append(im_resampled)
 
-    return output
+    if len(output) == 1:
+        output = output[0]
 
+    return output
 
 def deform2D(image, deformation, mode='bilinear'):
     '''
@@ -213,38 +218,81 @@ def deform3D(image, deformation, mode='linear'):
     for it_o, out in enumerate(output_flat):
         output.append(out.reshape(output_shape))
 
-    # ok1 = IId >= 0
-    # ok2 = JJd >= 0
-    # ok3 = KKd >= 0
-    # ok4 = IId <= image.shape[0]
-    # ok5 = JJd <= image.shape[1]
-    # ok6 = KKd <= image.shape[2]
-    # ok = ok1 & ok2 & ok3 & ok4 & ok5 & ok6
-    #
-    # del ok1, ok2, ok3, ok4, ok5, ok6
-    #
-    # points = (np.arange(image.shape[0]), np.arange(image.shape[1]), np.arange(image.shape[2]))
-    # xi = np.concatenate((IId[ok].reshape(-1, 1), JJd[ok].reshape(-1, 1), KKd[ok].reshape(-1, 1)), axis=1)
-    #
-    # del IId, JJd, KKd
-    #
-    # if mode == 'bilinear':
-    #
-    #     output_flat = interpn(points, image, xi=xi, method='linear', fill_value=0, bounds_error=False)
-    #     output = np.zeros(output_shape)
-    #     output[ok] = output_flat
-    #
-    # elif mode == 'nearest':
-    #
-    #     output_flat = interpn(points, image, xi=xi, method='nearest', fill_value=0, bounds_error=False)
-    #     output = np.zeros(output_shape)
-    #     output[ok] = output_flat
-    #
-    # else:
-    #     raise ValueError('Interpolation mode not available')
-    #
-
     return output
+
+def upscale_and_deform3D(image, deformation, ref_shape, ref_vox2ras0, flo_vox2ras0, factor=1):
+    '''
+    :param image: np.array or list of np.array to deform
+    :param deformation: array [3, d1, d2, d3]
+    :param ref_shape: image shape
+    :param ref_vox2ras0: reference (template, etc...) vox2ras0. Used to go from IId to RRd
+    :param flo_vox2ras0: float (image) vox2ras0
+    :param factor:
+    :return:
+    '''
+
+    ref_vox2ras0 = ref_vox2ras0.copy()
+
+    if isinstance(factor, int):
+        factor = np.asarray([factor, factor, factor])
+
+    if any(factor > 1):
+        resized_shape = tuple(np.ceil(ref_shape * factor).astype('int'))
+        field = np.zeros((3,) + resized_shape)
+        field[0] = factor[0] * resize(deformation[0], resized_shape, order=1)
+        field[1] = factor[1] * resize(deformation[1], resized_shape, order=1)
+        field[2] = factor[2] * resize(deformation[2], resized_shape, order=1)
+
+        del deformation
+
+        # compute new template vox2ras
+        for c in range(3):
+            ref_vox2ras0[:-1, c] = ref_vox2ras0[:-1, c] / factor[c]
+        ref_vox2ras0[:-1, -1] = ref_vox2ras0[:-1, -1] - np.matmul(ref_vox2ras0[:-1, :-1], 0.5 * (factor - 1))
+
+        # compute new template ras mosaic
+        # VOX Mosaic
+        start = - (factor - 1) / (2 * factor)
+        step = 1.0
+        stop = start + step * np.asarray(resized_shape)
+
+        ii = np.arange(start=start[0], stop=stop[0], step=step)
+        jj = np.arange(start=start[1], stop=stop[1], step=step)
+        kk = np.arange(start=start[2], stop=stop[2], step=step)
+        ii[ii < 0] = 0
+        jj[jj < 0] = 0
+        kk[kk < 0] = 0
+        ii[ii > (resized_shape[0] - 1)] = resized_shape[0] - 1
+        jj[jj > (resized_shape[1] - 1)] = resized_shape[1] - 1
+        kk[kk > (resized_shape[2] - 1)] = resized_shape[2] - 1
+
+    else:
+        resized_shape = ref_shape
+        field = deformation
+
+        del deformation
+
+        ii = np.arange(0, field.shape[1]),
+        jj = np.arange(0, field.shape[2]),
+        kk = np.arange(0, field.shape[3])
+
+    II, JJ, KK = np.meshgrid(ii, jj, kk, indexing='ij')
+
+    IId = II + field[0]
+    JJd = JJ + field[1]
+    KKd = KK + field[2]
+    voxMosaic = np.concatenate((IId.reshape(-1, 1),
+                                JJd.reshape(-1, 1),
+                                KKd.reshape(-1, 1),
+                                np.ones((np.prod(resized_shape), 1))), axis=1).T
+
+    rasMosaic = np.dot(ref_vox2ras0, voxMosaic)
+
+    # inverse of vox2ras
+    image_resampled = interpolate3D(image, rasMosaic, vox2ras0=flo_vox2ras0, resized_shape=resized_shape)
+
+    return image_resampled, ref_vox2ras0
+
 
 def get_affine_from_rotation(angle_list):
 
