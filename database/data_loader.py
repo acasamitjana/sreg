@@ -6,83 +6,73 @@ import nibabel as nib
 import numpy as np
 
 from setup import *
-
+from database import Results
 
 class Timepoint(object):
 
     def __init__(self, tid, sid, file_extension='.nii.gz'):
         self.sid = sid
         self.tid = tid
+        self.file_extension = file_extension
+        self.filename = tid + file_extension
+        self.results_dirs = Results(sid)
 
+        self.data_path = {
+            'image': join(IMAGES_DIR, sid, str(tid) + file_extension),
+            'resample': join(IMAGES_RESAMPLED_DIR, sid + '_resample', str(tid) + '_resampled' + file_extension),
+            'mask': join(MASKS_DIR, sid, str(tid) + file_extension),
+            'mask_dilated': join(MASKS_DIR, sid, str(tid) + '.dilated' + file_extension),
+            'seg': join(SEGMENTATION_DIR, sid + '_seg', str(tid) + '_synthseg' + file_extension),
+        }
 
-        self.image_orig_path = join(IMAGES_DIR, sid, str(tid) + file_extension)
-        self.image_path = join(IMAGES_RESAMPLED_DIR, sid + '_resample', str(tid) + '_resampled' + file_extension)
-        self.mask_path = join(MASKS_DIR, sid, str(tid) + file_extension)
-        self.mask_dilated_path = join(MASKS_DIR, sid, str(tid) + '.dilated' + file_extension)
-        self.seg_path = join(SEGMENTATION_DIR, sid + '_seg' , str(tid)  + '_synthseg' + file_extension)
+    def get_filepath(self, data_type):
+        if 'cog' in data_type:
+            return join(self.results_dirs.get_dir(data_type), self.tid + '.cog.npy')
 
-        if not exists(self.image_path): self.image_path = self.image_orig_path
+        if 'mask_dilated' in data_type:
+            return join(self.results_dirs.get_dir(data_type), self.tid + '.dilated' + self.file_extension)
+        else:
+            return join(self.results_dirs.get_dir(data_type), self.filename)
 
-        if not exists(join(PREPROCESSING_DIR, 'image', sid, 'tmp')): os.makedirs(join(PREPROCESSING_DIR, 'image', sid, 'tmp'))
-        if not exists(join(PREPROCESSING_DIR, 'resample', sid, 'tmp')): os.makedirs(join(PREPROCESSING_DIR, 'resample', sid, 'tmp'))
-        if not exists(join(PREPROCESSING_DIR, 'masks', sid, 'tmp')): os.makedirs(join(PREPROCESSING_DIR, 'masks', sid, 'tmp'))
-        if not exists(join(PREPROCESSING_DIR, 'seg', sid, 'tmp')): os.makedirs(join(PREPROCESSING_DIR, 'seg', sid, 'tmp'))
-
-        if not exists(join(ALGORITHM_DIR_LINEAR, 'image', sid, 'tmp')): os.makedirs(join(ALGORITHM_DIR_LINEAR, 'image', sid, 'tmp'))
-        if not exists(join(ALGORITHM_DIR_LINEAR, 'resample', sid, 'tmp')): os.makedirs(join(ALGORITHM_DIR_LINEAR, 'resample', sid, 'tmp'))
-        if not exists(join(ALGORITHM_DIR_LINEAR, 'masks', sid, 'tmp')): os.makedirs(join(ALGORITHM_DIR_LINEAR, 'masks', sid, 'tmp'))
-        if not exists(join(ALGORITHM_DIR_LINEAR, 'seg', sid, 'tmp')): os.makedirs(join(ALGORITHM_DIR_LINEAR, 'seg', sid, 'tmp'))
-
-        self.image_centered_path = join(PREPROCESSING_DIR, 'resample', sid, 'tmp', str(tid) + '.centered' + file_extension)
-        self.mask_centered_path = join(PREPROCESSING_DIR, 'masks', sid, 'tmp', str(tid) + '.centered' + file_extension)
-        self.seg_centered_path = join(PREPROCESSING_DIR, 'seg', sid, 'tmp', str(tid) + '.centered' + file_extension)
-        self.mask_dilated_centered_path = join(PREPROCESSING_DIR, 'masks', sid, 'tmp', str(tid) + '.dilated.centered' + file_extension)
-
-        self.image_updatedH_path = join(ALGORITHM_DIR_LINEAR, 'image', sid, str(tid) + '.updated_header' + file_extension)
-        self.image_resampled_updatedH_path = join(ALGORITHM_DIR_LINEAR, 'resample', sid, 'tmp', str(tid) + '.updated_header' + file_extension)
-        self.mask_updatedH_path = join(ALGORITHM_DIR_LINEAR, 'masks', sid, 'tmp', str(tid) + '.dilated.updated_header' + file_extension)
-        self.mask_dilated_updatedH_path = join(ALGORITHM_DIR_LINEAR, 'masks', sid, 'tmp', str(tid) + '.dilated.updated_header' + file_extension)
-        self.seg_updatedH_path = join(ALGORITHM_DIR_LINEAR, 'seg', sid, str(tid) + '.dilated.updated_header' + file_extension)
-
-        self.image_linear_path = join(ALGORITHM_DIR_LINEAR, 'image', sid, str(tid) + '.linear' + file_extension)
-        self.image_resampled_linear_path = join(ALGORITHM_DIR_LINEAR, 'resample', sid, str(tid) + '.linear' + file_extension)
-        self.mask_linear_path = join(ALGORITHM_DIR_LINEAR, 'masks', sid, str(tid) + '.linear' + file_extension)
-        self.mask_dilated_linear_path = join(ALGORITHM_DIR_LINEAR, 'masks', sid, str(tid) + '.linear' + file_extension)
-        self.seg_linear_path = join(ALGORITHM_DIR_LINEAR, 'seg', sid, str(tid) + '.linear' + file_extension)
 
     def get_cog(self):
+        return np.load(join(self.results_dirs.get_dir('preprocessing_cog'), self.tid + '.cog.npy'))[:3]
 
-        if not exists(self.image_centered_path):
-            raise ValueError("Please, run database/preprocess_dataset.py first.")
-
-        proxy = nib.load(self.image_path)
-        v1 = proxy.affine
-        proxy = nib.load(self.image_centered_path)
-        v2 = proxy.affine
-
-        return v1[:3, 3] - v2[:3, 3]
+        # if not exists(self.image_centered_path):
+        #     raise ValueError("Please, run database/preprocess_dataset.py first.")
+        #
+        # proxy = nib.load(self.image_path)
+        # v1 = proxy.affine
+        # proxy = nib.load(self.image_centered_path)
+        # v2 = proxy.affine
+        #
+        # return v1[:3, 3] - v2[:3, 3]
 
     def load_data_orig(self, *args, **kwargs):
-        proxy = nib.load(self.image_orig_path)
+        proxy = nib.load(join(self.data_path['image']))
         return np.asarray(proxy.dataobj)
 
     def load_data(self, centered=False, *args, **kwargs):
-        proxy = nib.load(self.image_path) if not centered else nib.load(self.image_centered_path)
+        if centered:
+            proxy = nib.load(join(self.results_dirs.get_dir('preprocessing_resample'), self.tid + '.centered' + self.file_extension))
+        else:
+            proxy = nib.load(self.data_path['resample'])
         return np.asarray(proxy.dataobj)
 
     def load_mask(self, dilated=False, centered=False, *args, **kwargs):
 
         if dilated and centered:
-            proxy = nib.load(self.mask_dilated_centered_path)
-        elif dilated:
-            proxy = nib.load(self.mask_dilated_path)
+            proxy = nib.load(join(self.results_dirs.get_dir('preprocessing_mask'), self.tid + '.dilated.centered' + self.file_extension))
+
+        elif centered:
+            proxy = nib.load(join(self.results_dirs.get_dir('preprocessing_mask'), self.tid + '.centered' + self.file_extension))
         else:
-            proxy = nib.load(self.mask_path)
+            proxy = nib.load(self.data_path['mask'])
 
         return (np.asarray(proxy.dataobj) > 0).astype('uint8')
 
-    def load_seg(self, centered=False, *args, **kwargs):
-        proxy = nib.load(self.seg_path) if not centered else nib.load(self.seg_centered_path)
+    def load_seg(self, *args, **kwargs):
+        proxy = nib.load(self.data_path['seg'])
         return np.asarray(proxy.dataobj)
 
     @property
@@ -91,44 +81,42 @@ class Timepoint(object):
 
     @property
     def image_shape(self):
-        proxy = nib.load(self.image_path)
+        proxy = nib.load(self.data_path['resample'])
         return proxy.shape
 
     @property
     def vox2ras0(self):
-        proxy = nib.load(self.image_path)
+        proxy = nib.load(self.data_path['resample'])
         return copy.copy(proxy.affine)
 
 
 class Timepoint_linear(Timepoint):
 
-    def __init__(self, tid, sid, file_extension='.nii.gz'):
-        
-        super(Timepoint_linear, self).__init__(tid, sid, file_extension)
-        
-        self.image_nonlinear_path = join(ALGORITHM_DIR, 'image', sid, str(tid) + '.nonlinear' + file_extension)
-        self.image_resampled_nonlinear_path = join(ALGORITHM_DIR, 'resample', sid, str(tid) + '.nonlinear' + file_extension)
-        self.mask_nonlinear_path = join(ALGORITHM_DIR, 'masks', sid, str(tid) + '.nonlinear' + file_extension)
-        self.mask_dilated_nonlinear_path = join(ALGORITHM_DIR, 'masks', sid, str(tid) + '.nonlinear' + file_extension)
-        self.seg_nonlinear_path = join(ALGORITHM_DIR, 'seg', sid, str(tid) + '.nonlinear' + file_extension)
-
-        if not exists(join(ALGORITHM_DIR, 'image', sid)): os.makedirs(join(ALGORITHM_DIR, 'image', sid))
-        if not exists(join(ALGORITHM_DIR, 'resample', sid)): os.makedirs(join(ALGORITHM_DIR, 'resample', sid))
-        if not exists(join(ALGORITHM_DIR, 'masks', sid)): os.makedirs(join(ALGORITHM_DIR, 'masks', sid))
-        if not exists(join(ALGORITHM_DIR, 'seg', sid)): os.makedirs(join(ALGORITHM_DIR, 'seg', sid))
-
-
-    def load_data(self, centered=False, *args, **kwargs):
-        proxy = nib.load(self.image_linear_path)
+    def load_data_orig(self, *args, **kwargs):
+        filepath = join(self.results_dirs.get_dir('linear_image'), self.filename)
+        proxy = nib.load(filepath)
         return np.asarray(proxy.dataobj)
 
-    def load_mask(self, dilated=False, centered=False, *args, **kwargs):
-        proxy = nib.load(self.mask_dilated_linear_path) if dilated else nib.load(self.mask_linear_path)
-        return (np.asarray(proxy.dataobj) > 0).astype('uint8')
-
-    def load_seg(self, centered=False, *args, **kwargs):
-        proxy = nib.load(self.seg_linear_path)
+    def load_data(self, resampled=False, *args, **kwargs):
+        data_dir = 'linear_resampled_resample' if resampled else 'linear_resample'
+        proxy = nib.load(join(self.results_dirs.get_dir(data_dir), self.filename))
         return np.asarray(proxy.dataobj)
+
+    def load_mask(self, resampled=False, dilated=False, *args, **kwargs):
+        data_dir = 'linear_resampled_mask' if resampled else 'linear_mask'
+        filename = self.tid + '.dilated' + self.file_extension if dilated else self.filename
+        proxy = nib.load(join(self.results_dirs.get_dir(data_dir), filename))
+        return np.asarray(proxy.dataobj)
+
+    def load_seg(self, resampled=False, *args, **kwargs):
+        data_dir = 'linear_resampled_seg' if resampled else 'linear_seg'
+        proxy = nib.load(join(self.results_dirs.get_dir(data_dir), self.filename))
+        return np.asarray(proxy.dataobj)
+
+    @property
+    def vox2ras0(self):
+        proxy = nib.load(join(self.results_dirs.get_dir('linear_resample'), self.filename))
+        return copy.copy(proxy.affine)
 
 
 class Subject(object):
@@ -136,14 +124,15 @@ class Subject(object):
     def __init__(self, sid):
         self.sid = sid
         self.slice_dict = {}
+        self.subject_dir = join(REGISTRATION_DIR)
 
-        registration_linear_dir = join(REGISTRATION_DIR, 'Linear')
-        registration_nonlinear_dir = join(REGISTRATION_DIR, 'Nonlinear')
-        if not exists(join(registration_linear_dir, 'templates', sid)): os.makedirs(join(registration_linear_dir, 'templates', sid))
-        if not exists(join(registration_nonlinear_dir, 'templates', sid)): os.makedirs(join(registration_nonlinear_dir, 'templates', sid))
+        self.results_dirs = Results(sid)
 
-        self.linear_template = join(registration_linear_dir, 'templates', sid + '.nii.gz')
-        self.nonlinear_template = join(registration_nonlinear_dir, 'templates', sid + '.nii.gz')
+        self.linear_template = join(self.results_dirs.get_dir('linear_data'),  'linear_template.nii.gz')
+        self.nonlinear_template = join(self.results_dirs.get_dir('nonlinear_data'), 'nonlinear_template.nii.gz')
+
+        self.linear_template_orig = join(self.results_dirs.get_dir('nonlinear_data'), 'linear_template.orig.nii.gz')
+        self.nonlinear_template_orig = join(self.results_dirs.get_dir('nonlinear_data'), 'nonlinear_template.orig.nii.gz')
 
     def set_timepoint(self, tid, file_extension):
         self.slice_dict[tid] = Timepoint(tid, self.sid, file_extension=file_extension)
@@ -194,6 +183,7 @@ class Subject_linear(Subject):
         proxy = nib.load(self.linear_template)
         return proxy.shape
 
+
 class DataLoader(object):
     def __init__(self, **kwargs):
         self.subject_dict = {}
@@ -201,7 +191,7 @@ class DataLoader(object):
 
     def _initialize_dataset(self, sid_list=None, linear=False):
 
-        subjects = os.listdir(IMAGES_DIR) if not linear else os.listdir(join(ALGORITHM_DIR_LINEAR, 'image'))
+        subjects = os.listdir(IMAGES_DIR) if not linear else os.listdir(REGISTRATION_DIR)
 
         for sbj in subjects:
             if sid_list is not None:

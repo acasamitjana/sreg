@@ -30,10 +30,10 @@ def initialize_graph_NR_lineal(pairwise_timepoints, results_dir, filename, tempd
 
     tp_ref, tp_flo = pairwise_timepoints
 
-    refFile = tp_ref.image_centered_path
-    floFile = tp_flo.image_centered_path
-    refMaskFile = tp_ref.mask_centered_path
-    floMaskFile = tp_flo.mask_centered_path
+    refFile = tp_ref.get_filepath('preprocessing_resample_centered')
+    floFile = tp_flo.get_filepath('preprocessing_resample_centered')
+    refMaskFile = tp_ref.get_filepath('preprocessing_mask_centered')
+    floMaskFile = tp_flo.get_filepath('preprocessing_mask_centered')
     outputFile = join(results_dir, filename + '.nii.gz')
     outputMaskFile = join(results_dir, filename + '.mask.nii.gz')
     affineFile = join(results_dir, filename + '.aff')
@@ -97,10 +97,10 @@ def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tem
     if not exists(tempdir): makedirs(tempdir)
 
     tp_ref, tp_flo = pairwise_timepoints
-    refFile = tp_ref.image_linear_path
-    floFile = tp_flo.image_linear_path
-    refMaskFile = tp_ref.mask_linear_path
-    floMaskFile = tp_flo.mask_linear_path
+    refFile = tp_ref.get_filepath('linear_resampled_image')
+    floFile = tp_flo.get_filepath('linear_resampled_image')
+    refMaskFile = tp_ref.get_filepath('linear_resampled_mask_dilated')
+    floMaskFile = tp_flo.get_filepath('linear_resampled_mask_dilated')
     outputFile = join(results_dir, filename + '.nii.gz')
     outputMaskFile = join(results_dir, filename + '.mask.nii.gz')
 
@@ -119,7 +119,7 @@ def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tem
         outputMaskFile, '-inter', '0', '-voff'
     ])
 
-    subprocess.call([TRANSFORMcmd, '-ref', refFile, '-flow', dummyFileNifti, dummyFileSVF, '-voff'])
+    subprocess.call([TRANSFORMcmd, '-ref', refFile, '-flow', dummyFileNifti, dummyFileSVF])
 
     proxy = nib.load(dummyFileSVF)
     svf_ras = np.transpose(np.squeeze(np.asarray(proxy.dataobj)), [3, 0, 1, 2])

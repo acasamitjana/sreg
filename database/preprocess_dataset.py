@@ -17,12 +17,10 @@ arg_parser.add_argument('--subjects', default=None, nargs='+')
 arguments = arg_parser.parse_args()
 subject_list = arguments.subjects
 
-create_results_dir(REGISTRATION_DIR, subdirs=['resampled', 'segmentations', 'masks', 'images', 'Linear', 'Nonlinear'])
-
 print('\n\n\n\n\n')
-print('# ---------------------------------------------------------------------------------------- #')
-print('# Preprocessing initial dataset with images and segmentations (e.g., FreeSurfer, Synthseg) #')
-print('# ---------------------------------------------------------------------------------------- #')
+print('# --------------------------------------------------------------------------------------------- #')
+print('# Preprocessing initial dataset with images and segmentations (e.g., from FreeSurfer, Synthseg) #')
+print('# --------------------------------------------------------------------------------------------- #')
 print('\n\n')
 
 print('\n[PREPROCESSING]: computing masks, dilated masks and centering images')
@@ -34,49 +32,48 @@ for sbj in subject_list:
     print(' Subject: ' + sbj.sid)
 
     for tp in sbj.timepoints:
-        if not exists(dirname(tp.mask_path)):
-            makedirs(dirname(tp.mask_path))
+        if not exists(dirname(tp.data_path['mask'])):
+            makedirs(dirname(tp.data_path['mask']))
 
         mri = tp.load_data()
         seg = tp.load_seg()
         vox2ras0 = tp.vox2ras0
 
         # Compute mask and dilated mask
-        if not exists( tp.mask_dilated_path) or not exists(tp.mask_dilated_path) or not exists(tp.image_centered_path) \
-                or not exists(tp.mask_centered_path) or not exists(tp.mask_dilated_centered_path) \
-                or not exists(tp.seg_centered_path):
+        if not exists(tp.get_filepath('preprocessing_resample_centered'))\
+                or not exists(tp.get_filepath('preprocessing_mask_centered')) \
+                or not exists(tp.get_filepath('preprocessing_mask_centered_dilated')) \
+                or not exists(tp.get_filepath('preprocessing_cog')):
+
             mask = seg > 0
 
             se = ball(3)
             mask_dilated = binary_dilation(mask, se)
 
             img = nib.Nifti1Image(mask.astype('uint8'), tp.vox2ras0)
-            nib.save(img, tp.mask_path)
+            nib.save(img, tp.data_path['mask'])
 
             img = nib.Nifti1Image(mask_dilated.astype('uint8'), tp.vox2ras0)
-            nib.save(img, tp.mask_dilated_path)
+            nib.save(img, tp.data_path['mask_dilated'])
 
             # Compute COG
             idx = np.where(mask_dilated>0)
             cog = np.concatenate((np.mean(idx, axis=1), [1]), axis=0)
             cog_ras = np.matmul(vox2ras0, cog)
-
+            np.save(tp.get_filepath('preprocessing_cog'), cog_ras)
 
             # Apply COG
             vox2ras0_centered = vox2ras0
             vox2ras0_centered[:, 3] -= cog_ras
 
             img = nib.Nifti1Image(mri, vox2ras0_centered)
-            nib.save(img, tp.image_centered_path)
+            nib.save(img, tp.get_filepath('preprocessing_resample_centered'))
 
             img = nib.Nifti1Image(mask.astype('uint8'), vox2ras0_centered)
-            nib.save(img, tp.mask_centered_path)
+            nib.save(img, tp.get_filepath('preprocessing_mask_centered'))
 
             img = nib.Nifti1Image(mask_dilated.astype('uint8'), vox2ras0_centered)
-            nib.save(img, tp.mask_dilated_centered_path)
-
-            img = nib.Nifti1Image(seg.astype('uint8'), vox2ras0_centered)
-            nib.save(img, tp.seg_centered_path)
+            nib.save(img, tp.get_filepath('preprocessing_mask_centered_dilated'))
 
 print('\n')
 print('[PREPROCESSING]: Done\n')
