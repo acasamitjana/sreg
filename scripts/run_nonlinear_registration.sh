@@ -3,7 +3,7 @@
 export PYTHONPATH='/home/acasamitjana/Repositories/sreg'
 
 if  [ $# -eq 0 ]; then
-    echo "Running all subjects in ALGORITHM_DIR_LINEAR/image"
+    echo "Running all subjects in c"
     python algorithm/initialize_graph_NR.py
     python algorithm/algorithm_NR.py
 else
