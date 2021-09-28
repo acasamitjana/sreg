@@ -143,7 +143,6 @@ def crop_label(mask, margin=10, threshold=0):
     crop_coord = []
     idx = np.where(mask>threshold)
     for it_index, index in enumerate(idx):
-
         clow = max(0, np.min(idx[it_index]) - margin[it_index])
         chigh = min(mask.shape[it_index], np.max(idx[it_index]) + margin[it_index])
         crop_coord.append([clow, chigh])
