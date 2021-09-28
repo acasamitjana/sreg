@@ -11,7 +11,6 @@ import nibabel as nib
 import itertools
 
 # project imports
-from setup import *
 from database.data_loader import DataLoader
 from scripts import config_dev as configFile
 from src.utils.algorithm_utils import initialize_graph_NR
@@ -29,7 +28,6 @@ print('\n\n')
 # Global parameters #
 #####################
 
-results_dir = OBSERVATIONS_DIR_NR
 parameter_dict = configFile.CONFIG_REGISTRATION
 
 arg_parser = ArgumentParser(description='Computes the prediction of certain models')
@@ -55,17 +53,20 @@ for it_subject, subject in enumerate(subject_list):
     PROCESS_REPEATED_FLAG = True
     timepoints = subject.timepoints
 
+    if not exists(subject.get_timepoint().data_path['resample']):
+        missing_subjects.append(subject.id)
+        print(subject.get_timepoint().image_path)
+        continue
+
     if len(timepoints) == 1:
         print(' Subject: ' + subject.id + ' has only 1 timepoint. No registration is made.')
         shutil.copy(subject.get_timepoint().image_path, subject.linear_template)
         continue
 
-    if not exists(subject.get_timepoint().image_path):
-        missing_subjects.append(subject.id)
-        print(subject.get_timepoint().image_path)
-        continue
 
-    tempdir = join(results_dir, subject.sid, 'tmp')
+
+    results_dir_sbj = subject.results_dirs.get_dir('nonlinear_registration')
+    tempdir = join(results_dir_sbj, 'tmp')
     if not exists(tempdir):
         makedirs(tempdir)
 
@@ -78,9 +79,6 @@ for it_subject, subject in enumerate(subject_list):
         # Registration #
         ################
         filename = str(tp_ref.tid) + '_to_' + str(tp_flo.tid)
-        results_dir_sbj = join(results_dir, subject.sid)
-        if not exists(results_dir_sbj): makedirs(results_dir_sbj)
-
         if exists(join(results_dir_sbj, filename + '.svf.nii.gz')) and first_repeated == 0:
             question = ' Subject: ' + subject.sid + ' has already some computed registrations in ' + \
                        results_dir_sbj + '.\n Do you want to proceed and overwrite or cancel?'
