@@ -1,4 +1,5 @@
 import csv
+import pdb
 
 import numpy as np
 import nibabel as nib
@@ -6,6 +7,7 @@ import nibabel as nib
 from scipy.interpolate import interpn, RegularGridInterpolator as rgi
 from skimage.transform import resize
 
+from src.utils.image_utils import crop_label
 
 def create_template_space(linear_image_list):
 
@@ -14,7 +16,10 @@ def create_template_space(linear_image_list):
     margin_bb = 5
     for it_lil, lil in enumerate(linear_image_list):
 
-        proxy = nib.load(lil)
+        if isinstance(lil, nib.nifti1.Nifti1Image):
+            proxy = lil
+        else:
+            proxy = nib.load(lil)
         mask = np.asarray(proxy.dataobj)
         header = proxy.affine
         idx = np.where(mask > 0)
@@ -79,7 +84,6 @@ def create_template_space(linear_image_list):
 
     return rasMosaic, template_vox2ras0, template_size
 
-
 def interpolate2D(image, mosaic, mode='bilinear'):
     '''
     :param image: np.array or list of np.arrays.
@@ -104,35 +108,188 @@ def interpolate2D(image, mosaic, mode='bilinear'):
 def interpolate3D(image, mosaic, vox2ras0=None, resized_shape=None, mode='linear'):
     '''
 
-    :param image: np.array or list of np.arrays.
+    :param image: nib.nifti1.Nifti1Image or np.array.
     :param mosaic: Nx3 or 4xN in case it's voxels not RAS.
     :param vox2ras0: optional if the mosaic is specified at ras space.
     :param mode: 'nearest' or 'linear'
     :return:
     '''
-    if not isinstance(image, list):
-        image = [image]
+
+    if isinstance(image, nib.nifti1.Nifti1Image):
+        image = np.asarray(image.dataobj)
+
+    image_shape = image.shape[:3]
+    nchannels = 1
+    if len(image.shape) > 3:
+        nchannels = image.shape[3]
+    else:
+        image = image[..., np.newaxis]
+        nchannels = 1
 
     if vox2ras0 is not None:
         mosaic = np.matmul(np.linalg.inv(vox2ras0), mosaic)
         mosaic = mosaic[:3].T
 
-    x = np.arange(0, image[0].shape[0])
-    y = np.arange(0, image[0].shape[1])
-    z = np.arange(0, image[0].shape[2])
+    x = np.arange(0, image_shape[0])
+    y = np.arange(0, image_shape[1])
+    z = np.arange(0, image_shape[2])
+
+    ok1 = mosaic[..., 0] >= 0
+    ok2 = mosaic[..., 1] >= 0
+    ok3 = mosaic[..., 2] >= 0
+    ok4 = mosaic[..., 0] <= image_shape[0]
+    ok5 = mosaic[..., 1] <= image_shape[1]
+    ok6 = mosaic[..., 2] <= image_shape[2]
+    ok = ok1 & ok2 & ok3 & ok4 & ok5 & ok6
+
+    my_interpolation_function = rgi((x,y,z), image, method=mode, bounds_error=False, fill_value=0)
+    im_resampled_ok = my_interpolation_function(mosaic[ok])
+    output_flat = np.zeros(ok.shape + (nchannels,), dtype=image.dtype)
+    for it_ch in range(nchannels): output_flat[ok, it_ch] = im_resampled_ok[..., it_ch]
+
+    if resized_shape is not None:
+        output = np.zeros(resized_shape + (nchannels,), dtype=image.dtype)
+        for it_ch in range(nchannels):  output[..., it_ch] = output_flat [..., it_ch].reshape(resized_shape)
+
+    else:
+        output = output_flat
+
+    if nchannels == 1:
+        output = output[..., 0]
+
+    return output
+
+    if n_channels > 1:
+        im_resampled = np.zeros(ok.shape + (n_channels,))
+    else:
+        im_resampled = np.zeros(ok.shape)
+
+    im_resampled[ok] = im_resampled_ok
+
+    if resized_shape is not None:
+        im_resampled = im_resampled.reshape(resized_shape)
+
+    pdb.set_trace()
+    return im_resampled
+
+def interpolate3DChannel(image, mosaic, vox2ras0=None, resized_shape=None, mode='linear'):
+    '''
+
+    :param image: nib.nifti1.Nifti1Image, np.array or list of np.arrays.
+    :param mosaic: Nx3 or 4xN in case it's voxels not RAS.
+    :param vox2ras0: optional if the mosaic is specified at ras space.
+    :param mode: 'nearest' or 'linear'
+    :return:
+    '''
+
+    if isinstance(image, list):
+        image = np.concatenate([i[..., np.newaxis] for i in image], axis=-1)
+
+
+    image_shape = image.shape[:3]
+    if len(image.shape) == 3:
+        nchannels = 1
+        image = image[..., np.newaxis]
+
+    else:
+        nchannels = image.shape[3]
+
+
+    if vox2ras0 is not None:
+        mosaic = np.matmul(np.linalg.inv(vox2ras0), mosaic)
+        mosaic = mosaic[:3].T
+
+    x = np.arange(0, image_shape[0])
+    y = np.arange(0, image_shape[1])
+    z = np.arange(0, image_shape[2])
+
+    ok1 = mosaic[..., 0] >= 0
+    ok2 = mosaic[..., 1] >= 0
+    ok3 = mosaic[..., 2] >= 0
+    ok4 = mosaic[..., 0] <= image_shape[0]
+    ok5 = mosaic[..., 1] <= image_shape[1]
+    ok6 = mosaic[..., 2] <= image_shape[2]
+    ok = ok1 & ok2 & ok3 & ok4 & ok5 & ok6
+
+    my_interpolation_function = rgi((x,y,z), image, method=mode, bounds_error=False, fill_value=0)
+    im_resampled_ok = my_interpolation_function(mosaic[ok])
+    output_flat = np.zeros(ok.shape + (nchannels,), dtype=image.dtype)
+
+    for it_ch in range(nchannels): output_flat[ok, it_ch] = im_resampled_ok[..., it_ch]
+
+    if resized_shape is not None:
+        output = np.zeros(resized_shape + (nchannels,), dtype=image.dtype)
+        for it_ch in range(nchannels):  output[..., it_ch] = output_flat [..., it_ch].reshape(resized_shape)
+
+    else:
+        output = output_flat
+
+    if nchannels == 1:
+        output = output[..., 0]
+
+    return output
+
+def interpolate3DLabel(image, mosaic, vox2ras0=None, resized_shape=None, mode='linear'):
+    '''
+
+    :param image: nib.nifti1.Nifti1Image, list of np.arrays.
+    :param mosaic: Nx3 or 4xN in case it's voxels not RAS.
+    :param vox2ras0: optional if the mosaic is specified at ras space.
+    :param mode: 'nearest' or 'linear'
+    :return:
+    '''
+    if isinstance(image, nib.nifti1.Nifti1Image) or isinstance(image, nib.freesurfer.mghformat.MGHImage):
+        is_nifti = True
+        image_shape = image.shape
+        num_images = 1
+        if len(image_shape) == 4:
+            num_images = image_shape[3]
+            image_shape = image_shape[:3]
+
+    else:
+        is_nifti = False
+        num_images = len(image)
+        image_shape = image[0].shape
+
+    if isinstance(mode, str):
+        mode = [mode]*num_images
+
+    if vox2ras0 is not None:
+        mosaic = np.matmul(np.linalg.inv(vox2ras0), mosaic)
+        mosaic = mosaic[:3].T
 
     output = []
-    for im in image:
-        my_interpolation_function = rgi((x,y,z), im, method=mode, bounds_error=False, fill_value=0)
-        im_resampled = my_interpolation_function(mosaic)
-        if resized_shape is not None:
-            im_resampled = im_resampled.reshape(resized_shape)
+    for it_im in range(num_images):
+        im = np.asarray(image.dataobj[..., it_im]) if is_nifti else image[it_im]
+
+        _, crop_coord = crop_label(im > 0.05)
+        im = im[crop_coord[0][0]: crop_coord[0][1], crop_coord[1][0]: crop_coord[1][1], crop_coord[2][0]: crop_coord[2][1]]
+
+        x = np.arange(crop_coord[0][0], crop_coord[0][1])
+        y = np.arange(crop_coord[1][0], crop_coord[1][1])
+        z = np.arange(crop_coord[2][0], crop_coord[2][1])
+
+        ok1 = mosaic[..., 0] >= crop_coord[0][0]
+        ok2 = mosaic[..., 1] >= crop_coord[1][0]
+        ok3 = mosaic[..., 2] >= crop_coord[2][0]
+        ok4 = mosaic[..., 0] <= crop_coord[0][1]
+        ok5 = mosaic[..., 1] <= crop_coord[1][1]
+        ok6 = mosaic[..., 2] <= crop_coord[2][1]
+        ok = ok1 & ok2 & ok3 & ok4 & ok5 & ok6
+
+        my_interpolation_function = rgi((x,y,z), im, method=mode[it_im], bounds_error=False, fill_value=0)
+        im_resampled_ok = my_interpolation_function(mosaic[ok])
+
+        im_resampled = np.zeros(ok.shape)
+        im_resampled[ok] = im_resampled_ok
+        im_resampled=im_resampled.reshape(resized_shape)
         output.append(im_resampled)
 
     if len(output) == 1:
         output = output[0]
 
     return output
+
 
 def deform2D(image, deformation, mode='bilinear'):
     '''
@@ -186,7 +343,7 @@ def deform2D(image, deformation, mode='bilinear'):
 
     return output
 
-def deform3D(image, deformation, mode='linear'):
+def deform3D(image, deformation, mode='linear', **kwargs):
     '''
 
     :param image: 3D np.array (nrow, ncol)
@@ -213,14 +370,11 @@ def deform3D(image, deformation, mode='linear'):
 
     del IId, JJd, KKd
 
-    output_flat = interpolate3D(image, mosaic,  mode=mode)
-    output = []
-    for it_o, out in enumerate(output_flat):
-        output.append(out.reshape(output_shape))
+    output = interpolate3DChannel(image, mosaic,  mode=mode, **kwargs)
 
     return output
 
-def upscale_and_deform3D(image, deformation, ref_shape, ref_vox2ras0, flo_vox2ras0, factor=1):
+def upscale_and_deform3D(image, deformation, ref_shape, ref_vox2ras0, flo_vox2ras0, factor=1, mode='linear'):
     '''
     :param image: np.array or list of np.array to deform
     :param deformation: array [3, d1, d2, d3]
@@ -232,7 +386,6 @@ def upscale_and_deform3D(image, deformation, ref_shape, ref_vox2ras0, flo_vox2ra
     '''
 
     ref_vox2ras0 = ref_vox2ras0.copy()
-
     if isinstance(factor, int):
         factor = np.asarray([factor, factor, factor])
 
@@ -289,7 +442,7 @@ def upscale_and_deform3D(image, deformation, ref_shape, ref_vox2ras0, flo_vox2ra
     rasMosaic = np.dot(ref_vox2ras0, voxMosaic)
 
     # inverse of vox2ras
-    image_resampled = interpolate3D(image, rasMosaic, vox2ras0=flo_vox2ras0, resized_shape=resized_shape)
+    image_resampled = interpolate3D(image, rasMosaic, vox2ras0=flo_vox2ras0, resized_shape=resized_shape, mode=mode)
 
     return image_resampled, ref_vox2ras0
 

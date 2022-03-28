@@ -135,7 +135,6 @@ class AffineParams(object):
 
         return T7 @ T6 @ T5 @ T4 @ T3 @ T2 @ T1
 
-
 class FlipParams(object):
     pass
 
@@ -149,58 +148,68 @@ class PadParams(object):
         self.dim = dim
 
 class NonLinearParams(object):
-    def __init__(self, lowres_size, lowres_strength=1, distribution = 'normal', nstep=5):
-        self.lowres_size = lowres_size
-        self.lowres_strength = lowres_strength
+    def __init__(self, lowres_strength=1, lowres_shape_factor=0.04, distribution='normal', nstep=5):
+
+        if isinstance(lowres_strength, int):
+            self.lowres_strength = [lowres_strength, lowres_strength]
+        else:
+            self.lowres_strength = lowres_strength
+
+        self.lowres_shape_factor = lowres_shape_factor
         self.distribution = distribution
         self.nstep = nstep
 
-    def get_lowres_strength(self, ndim=2):
+    def get_lowres_size(self, image_shape):
+        return tuple([int(s*self.lowres_shape_factor) for s in image_shape])
 
-        size = 1
+    def get_lowres_strength(self, image_shape):
+
+        lowres_size = self.get_lowres_size(image_shape)
+
+        ndim = len(image_shape)
         if self.distribution == 'normal':
             mean, std = self.lowres_strength[1], self.lowres_strength[0]
-            lowres_strength = np.random.randn(size) * std + mean
+            lowres_strength = np.random.randn(1) * std + mean
 
         elif self.distribution == 'uniform':
             high, low = self.lowres_strength[1], self.lowres_strength[0]
-            lowres_strength = np.random.rand(size) * (high - low) + low
+            lowres_strength = np.random.rand(1) * (high - low) + low
 
         elif self.distribution == 'lognormal':
             mean, std = self.lowres_strength[1], self.lowres_strength[0]
-            lowres_strength = np.random.randn(size) * std + mean
+            lowres_strength = np.random.randn(1) * std + mean
             lowres_strength = np.exp(lowres_strength)
 
         elif self.distribution is None:
-            lowres_strength = [self.lowres_strength] * size
+            lowres_strength = [self.lowres_strength]
 
         else:
             raise ValueError("[src/utils/transformations: NonLinearDeformation]. Please, specify a valid distribution "
                              "for the low-res nonlinear distribution")
 
         if ndim ==2:
-            field_lowres_x = lowres_strength * np.random.randn(self.lowres_size[0],
-                                                               self.lowres_size[1])  # generate random noise.
+            field_lowres_x = lowres_strength * np.random.randn(lowres_size[0],
+                                                               lowres_size[1])  # generate random noise.
 
-            field_lowres_y = lowres_strength * np.random.randn(self.lowres_size[0],
-                                                               self.lowres_size[1])  # generate random noise.
+            field_lowres_y = lowres_strength * np.random.randn(lowres_size[0],
+                                                               lowres_size[1])  # generate random noise.
 
             return field_lowres_x, field_lowres_y
 
         else:
-            field_lowres_x = lowres_strength * np.random.randn(self.lowres_size[0],
-                                                               self.lowres_size[1],
-                                                               self.lowres_size[2])  # generate random noise.
+            field_lowres_x = lowres_strength * np.random.randn(lowres_size[0],
+                                                               lowres_size[1],
+                                                               lowres_size[2])  # generate random noise.
 
-            field_lowres_y = lowres_strength * np.random.randn(self.lowres_size[0],
-                                                               self.lowres_size[1],
-                                                               self.lowres_size[2])  # generate random noise.
+            field_lowres_y = lowres_strength * np.random.randn(lowres_size[0],
+                                                               lowres_size[1],
+                                                               lowres_size[2])  # generate random noise.
 
-            field_lowres_z = lowres_strength * np.random.randn(self.lowres_size[0],
-                                                               self.lowres_size[1],
-                                                               self.lowres_size[2])  # generate random noise.
+            field_lowres_z = lowres_strength * np.random.randn(lowres_size[0],
+                                                               lowres_size[1],
+                                                               lowres_size[2])  # generate random noise.
+
             return field_lowres_x, field_lowres_y, field_lowres_z
-
 
 class RotationParams(object):
 
@@ -482,10 +491,8 @@ class RandomCropManyImages(object):
                     pad_width.append((pad0, size[it_dim] - data.shape[it_dim]-pad0))
                 else:
                     pad_width.append((0,0))
-
             data = np.pad(data, pad_width=pad_width, mode=self.padding_mode, constant_values=self.fill)
             padded_data_list.append(data)
-
 
         init_coord, output_shape = self.get_params(padded_data_list[0].shape, size)
 
@@ -534,7 +541,6 @@ class RandomCropManyImages(object):
             output.append(data)
 
         return output
-
 
 class NonLinearDeformationManyImages(object):
 

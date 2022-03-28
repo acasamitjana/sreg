@@ -8,17 +8,18 @@ import torch
 import numpy as np
 from skimage.transform import resize
 from scipy.interpolate import interpn
-# import pytorch3d
 
-from setup import NIFTY_REG_DIR
-from src import models
-from src.utils import image_transform as tf, deformation_utils as def_utils
+
+from setup import *
+from src import models, datasets, layers
+from src.utils import data_loader_utils as tf, deformation_utils as def_utils, tensor_utils
 
 ALADINcmd = NIFTY_REG_DIR + 'reg-apps' + '/reg_aladin'
 F3Dcmd = NIFTY_REG_DIR + 'reg-apps' + '/reg_f3d'
 TRANSFORMcmd = NIFTY_REG_DIR + 'reg-apps' + '/reg_transform'
 REScmd = NIFTY_REG_DIR + 'reg-apps' + '/reg_resample'
 
+f3d_parameters = ['-sx', str(4), '-omp', '4', '--lncc', '5', '-vel', '-voff']
 
 # -------------- #
 # Initialization #
@@ -41,37 +42,105 @@ def initialize_graph_NR_lineal(pairwise_timepoints, results_dir, filename, tempd
     # System calls
     subprocess.call([
         ALADINcmd, '-ref', refFile, '-flo', floFile, '-aff', affineFile, '-res', outputFile, '-rigOnly',
-        '-rmask', refMaskFile, '-fmask', floMaskFile, '-pad', '0', '-speeeeed', '-omp', '4', '--voff'
+        '-rmask', refMaskFile, '-fmask', floMaskFile, '-cog', '-pad', '0', '-speeeeed', '-omp', '4', '--voff'
     ])
 
-    subprocess.call([
-        REScmd, '-ref', refMaskFile, '-flo', floMaskFile, '-trans', affineFile, '-res',
-        outputMaskFile, '-inter', '0', '-voff'
-    ])
+    if DEBUG:
+        subprocess.call([
+            REScmd, '-ref', refMaskFile, '-flo', floMaskFile, '-trans', affineFile, '-res',
+            outputMaskFile, '-inter', '0', '-voff'
+        ])
+    else:
+        os.remove(outputFile)
 
+def predict_RegNet(pairwise_timepoints, parameter_dict, ref_aff=None, flo_aff=None, epoch='FI', use_gpu=True):
+    device = 'cuda' if use_gpu else 'cpu'
+    image_shape = parameter_dict['VOLUME_SHAPE']
 
-def initialize_graph_RegNet(model, generator_data, image_shape, device):
+    dataset = datasets.RegistrationDataset3D(
+        [pairwise_timepoints],
+        tf_params=parameter_dict['TRANSFORM'],
+        norm_params=parameter_dict['NORMALIZATION'],
+        mask_dilation=True,
+    )
+    generator = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=parameter_dict['BATCH_SIZE'],
+        shuffle=False,
+    )
 
-    num_elements = len(generator_data.dataset)
-    num_batches = len(generator_data)
-    batch_size = generator_data.batch_size
+    int_steps = parameter_dict['INT_STEPS'] if parameter_dict['FIELD_TYPE'] == 'velocity' else 0
+    if int_steps == 0: assert parameter_dict['UPSAMPLE_LEVELS'] == 1
+    model = models.RegNet(
+        nb_unet_features=[parameter_dict['ENC_NF'], parameter_dict['DEC_NF']],
+        inshape=image_shape,
+        int_steps=int_steps,
+        int_downsize=parameter_dict['UPSAMPLE_LEVELS'],
+    )
 
-    downsample_factor = model.fullsize.factor
-    vel_shape = tuple([int(i/d) for i,d in zip(image_shape, downsample_factor)])
+    model = model.to(device)
+    weightsfile = 'model_checkpoint.' + str(epoch) + '.pth'
+    checkpoint = torch.load(join(parameter_dict['RESULTS_DIR'], 'checkpoints', weightsfile), map_location=device)
+    model.load_state_dict(checkpoint['state_dict'])
+    model.eval()
+
+    apply_aff = layers.SpatialTransformerAffine(image_shape)
+
+    v_list = []
+    with torch.no_grad():
+        for it_dd, data_dict in enumerate(generator):
+
+            ref_image = data_dict['x_ref'].to(device)
+            flo_image = data_dict['x_flo'].to(device)
+
+            if ref_aff is not None:
+                ref_image = apply_aff(ref_image, torch.from_numpy(ref_aff[np.newaxis, np.newaxis]).float())
+
+            if flo_aff is not None:
+                flo_image = apply_aff(flo_image, torch.from_numpy(flo_aff[np.newaxis, np.newaxis]).float())
+
+            r, f, v = model(flo_image, ref_image)
+
+            pdb.set_trace()
+            velocity_field = np.squeeze(v.cpu().detach().numpy())
+            velocity_field[np.isnan(velocity_field)] = 0
+            v_list.append(velocity_field)
+
+    return v_list
+
+def initialize_graph_RegNet(pairwise_timepoints, parameter_dict, results_dir, filename, vox2ras0, subject_shape, epoch='FI', use_gpu='gpu'):
+    device = 'cuda' if use_gpu else 'cpu'
+    image_shape = parameter_dict['VOLUME_SHAPE']
+
+    dataset = datasets.RegistrationDataset3D(
+        [pairwise_timepoints],
+        tf_params=parameter_dict['TRANSFORM'],
+        norm_params=parameter_dict['NORMALIZATION'],
+        mask_dilation=True,
+    )
+    generator = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=parameter_dict['BATCH_SIZE'],
+        shuffle=False,
+    )
+
+    int_steps = parameter_dict['INT_STEPS'] if parameter_dict['FIELD_TYPE'] == 'velocity' else 0
+    if int_steps == 0: assert parameter_dict['UPSAMPLE_LEVELS'] == 1
+    model = models.RegNet(
+        nb_unet_features=[parameter_dict['ENC_NF'], parameter_dict['DEC_NF']],
+        inshape=image_shape,
+        int_steps=int_steps,
+        int_downsize=parameter_dict['UPSAMPLE_LEVELS'],
+    )
+
+    model = model.to(device)
+    weightsfile = 'model_checkpoint.' + str(epoch) + '.pth'
+    checkpoint = torch.load(join(parameter_dict['RESULTS_DIR'], 'checkpoints', weightsfile), map_location=device)
+    model.load_state_dict(checkpoint['state_dict'])
+    model.eval()
 
     with torch.no_grad():
-
-        registered_image = np.zeros((num_elements,) + image_shape)
-        registered_mask = np.zeros((num_elements,) + image_shape)
-        velocity_field = np.zeros((num_elements, 3) + vel_shape)
-        deformation_field = np.zeros((num_elements, 3) + image_shape)
-
-        for it_batch, data_dict in enumerate(generator_data):
-
-            start = it_batch * batch_size
-            end = start + batch_size
-            if it_batch == num_batches - 1:
-                end = num_elements
+        for it_dd, data_dict in enumerate(generator):
 
             ref_image = data_dict['x_ref'].to(device)
             flo_image = data_dict['x_flo'].to(device)
@@ -80,17 +149,35 @@ def initialize_graph_RegNet(model, generator_data, image_shape, device):
             r, f, v = model(flo_image, ref_image)
             r_mask = model.predict(flo_mask, f, svf=False, mode='nearest')
 
-            registered_image[start:end] = np.squeeze(r.cpu().detach().numpy())
-            registered_mask[start:end] = np.squeeze(r_mask.cpu().detach().numpy())
+            registered_image = np.squeeze(r.cpu().detach().numpy())
+            registered_mask = np.squeeze(r_mask.cpu().detach().numpy())
 
-            velocity_field[start:end] = v.cpu().detach().numpy()
-            deformation_field[start:end] = f.cpu().detach().numpy()
+            velocity_field = np.squeeze(v.cpu().detach().numpy())
+            deformation_field = np.squeeze(f.cpu().detach().numpy())
 
-    velocity_field[np.isnan(velocity_field)] = 0
-    deformation_field[np.isnan(deformation_field)] = 0
+            velocity_field[np.isnan(velocity_field)] = 0
+            deformation_field[np.isnan(deformation_field)] = 0
 
-    return np.transpose(registered_image, [1, 2, 3, 0]), np.transpose(registered_mask, [1, 2, 3, 0]), \
-           np.transpose(velocity_field, [1, 2, 3, 4, 0]), np.transpose(deformation_field, [1, 2, 3, 4, 0]),\
+            diff_shape = [image_shape[it_d] - subject_shape[it_d] for it_d in range(3)]
+            if sum(np.abs(diff_shape)) > 0:
+                tx = np.eye(4)
+                tx[0, -1] = -(diff_shape[0] // 2)
+                tx[1, -1] = -(diff_shape[1] // 2)
+                tx[2, -1] = -(diff_shape[2] // 2)
+                vox2ras0 = vox2ras0 @ tx
+
+            # Save output forward tree
+            img = nib.Nifti1Image(velocity_field, vox2ras0)
+            nib.save(img, join(results_dir, filename + '.svf.nii.gz'))
+
+            img = nib.Nifti1Image(registered_mask, vox2ras0)
+            nib.save(img, join(results_dir, filename + '.mask.nii.gz'))
+
+            if DEBUG:
+                img = nib.Nifti1Image(registered_image, vox2ras0)
+                nib.save(img, join(results_dir, filename + '.nii.gz'))
+
+
 
 def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tempdir='/tmp'):
 
@@ -111,8 +198,7 @@ def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tem
     # System calls
     subprocess.call([
         F3Dcmd, '-ref', refFile, '-flo', floFile, '-res', outputFile, '-rmask', refMaskFile,
-        '-fmask', floMaskFile, '-cpp', dummyFileNifti, '-sx', str(10), '-omp', '4', '--lncc', '5', '-vel', '-voff'
-    ])
+        '-fmask', floMaskFile, '-cpp', dummyFileNifti] + f3d_parameters)
 
     subprocess.call([
         REScmd, '-ref', refMaskFile, '-flo', floMaskFile, '-trans', dummyFileNifti, '-res',
@@ -137,6 +223,9 @@ def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tem
     img = nib.Nifti1Image(svf, vox2ras)
     nib.save(img, nonlinearSVF)
 
+    if not DEBUG:
+        os.remove(outputFile)
+
 
 # ----------------------------- #
 # Deformation field integration #
@@ -144,50 +233,52 @@ def initialize_graph_NR(pairwise_timepoints, results_dir, filename, vox2ras, tem
 def integrate_NR(svf, image_shape, nsteps=10, int_end=1):
 
     int_shape = svf.shape[1:]
-    II, JJ, KK = np.meshgrid(np.arange(0, int_shape[0]), np.arange(0, int_shape[1]), np.arange(0, int_shape[2]), indexing='ij')
+    # II, JJ, KK = np.meshgrid(np.arange(0, int_shape[0]), np.arange(0, int_shape[1]), np.arange(0, int_shape[2]), indexing='ij')
     nsteps = int(max(0, np.ceil(nsteps + np.log2(int_end))))
-    flow_i = svf[0] / 2 ** nsteps * int_end
-    flow_j = svf[1] / 2 ** nsteps * int_end
-    flow_k = svf[2] / 2 ** nsteps * int_end
-    for it_step in range(nsteps):
-
-        inc = def_utils.deform3D([flow_i, flow_j, flow_k], [flow_i, flow_j, flow_k])
-        inci, incj, inck = inc
-
-        flow_i = flow_i + inci.reshape(int_shape)
-        flow_j = flow_j + incj.reshape(int_shape)
-        flow_k = flow_k + inck.reshape(int_shape)
-
-        del inci, incj, inck
-
-    del II, JJ, KK
 
     if int_shape[0] != image_shape[0] or int_shape[0] != image_shape[0] or int_shape[0] != image_shape[0]:
-        flow_i = resize(flow_i, image_shape)
-        flow_j = resize(flow_j, image_shape)
-        flow_k = resize(flow_k, image_shape)
+        svf = resize(svf, svf.shape[:1] + image_shape)
 
-    flow = np.concatenate((flow_i[np.newaxis], flow_j[np.newaxis], flow_k[np.newaxis]), axis=0)
+    flow = svf / 2 ** nsteps * int_end
+    for it_step in range(nsteps):
+        inc = def_utils.deform3D(np.transpose(flow, axes=[1, 2, 3, 0]), flow, resized_shape=flow.shape[1:])
+        flow = flow + np.transpose(inc, axes=[3, 0, 1, 2])
+
+    # del II, JJ, KK
+    #
+
+    #
+    # flow = np.concatenate((flow_i[np.newaxis], flow_j[np.newaxis], flow_k[np.newaxis]), axis=0)
+
     return flow
 
-def integrate_RegNet(svf, image_shape, parameter_dict):
+def integrate_RegNet(svf, image_shape, parameter_dict, device='cpu', model=None):
 
-    model = models.RegNet(
-        nb_unet_features=[parameter_dict['ENC_NF'], parameter_dict['DEC_NF']],
-        inshape=parameter_dict['VOLUME_SHAPE'],
-        int_steps=7,
-        int_downsize=parameter_dict['UPSAMPLE_LEVELS'],
-    )
 
-    new_svf = torch.tensor(svf[np.newaxis])
+    if model is None:
+        int_steps = parameter_dict['INT_STEPS'] if parameter_dict['FIELD_TYPE'] == 'velocity' else 0
+        if int_steps == 0: assert parameter_dict['UPSAMPLE_LEVELS'] == 1
+
+        model = models.RegNet(
+            nb_unet_features=[parameter_dict['ENC_NF'], parameter_dict['DEC_NF']],
+            inshape=parameter_dict['VOLUME_SHAPE'],
+            int_steps=int_steps,
+            int_downsize=parameter_dict['UPSAMPLE_LEVELS'],
+        )
+
+        model.to(device)
+
+    new_svf = torch.tensor(svf[np.newaxis]).to(device)
     flow = model.get_flow_field(new_svf)
-    flow = np.squeeze(flow.detach().numpy())
+    flow = np.squeeze(flow.cpu().detach().numpy())
 
-    flow_image = np.zeros((3,) + image_shape)
+    flow_image = np.zeros((3,) + image_shape, dtype=svf.dtype)
     transform = tf.Compose(parameter_dict['TRANSFORM'])
     f_x, f_y, f_z = transform.inverse([flow[0], flow[1], flow[2]], img_shape=[image_shape] * 3)
     flow_image[0] = f_x
     flow_image[1] = f_y
     flow_image[2] = f_z
+
+    del flow, new_svf, model
 
     return flow_image

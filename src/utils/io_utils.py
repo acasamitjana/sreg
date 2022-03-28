@@ -1,7 +1,8 @@
 from datetime import datetime, date
 from os.path import join, exists
-from os import makedirs
+from os import makedirs, listdir
 import gc
+import subprocess
 import sys
 
 import torch
@@ -21,6 +22,33 @@ def create_results_dir(results_dir, subdirs=None):
         for sd in subdirs:
             if not exists(join(results_dir, sd)):
                 makedirs(join(results_dir, sd))
+
+def get_memory_used():
+    import sys
+    local_vars = list(locals().items())
+    for var, obj in local_vars: print(var, sys.getsizeof(obj) / 1000000000)
+
+
+def convert_nifti_directory(directory, extension='.nii.gz'):
+
+    files = listdir(directory)
+    for f in files:
+        if extension in f:
+            continue
+        elif '.nii.gz' in f:
+            new_f = f[:-6] + extension
+
+        elif '.nii' in f:
+            new_f = f[:-4] + extension
+
+        elif '.mgz' in f:
+            new_f = f[:-4] + extension
+
+        else:
+            continue
+
+        subprocess.call(['mri_convert', join(directory, f), join(directory, new_f)])
+
 
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.

@@ -1,6 +1,6 @@
 # imports
 from os.path import join, exists
-from os import makedirs
+from os import makedirs, rmdir
 import time
 from argparse import ArgumentParser
 import shutil
@@ -13,9 +13,9 @@ import itertools
 # project imports
 from database.data_loader import DataLoader
 from scripts import config_dev as configFile
-from src.utils.algorithm_utils import initialize_graph_NR
-from src.utils.io import query_yes_no
-
+from src.utils.algorithm_utils import initialize_graph_NR, initialize_graph_RegNet
+from src.utils.io_utils import query_yes_no
+from setup import *
 
 print('\n\n\n\n\n')
 print('# ------------------------------------------------- #')
@@ -32,9 +32,11 @@ parameter_dict = configFile.CONFIG_REGISTRATION
 
 arg_parser = ArgumentParser(description='Computes the prediction of certain models')
 arg_parser.add_argument('--subjects', default=None, nargs='+')
+arg_parser.add_argument('--reg_algorithm', default='bidir', choices=['standard', 'bidir', 'niftyreg'])
 
 arguments = arg_parser.parse_args()
 initial_subject_list = arguments.subjects
+reg_algorithm = arguments.reg_algorithm
 
 ###################
 # Tree parameters #
@@ -50,12 +52,12 @@ subject_list = data_loader.subject_list
 ####################
 missing_subjects = []
 for it_subject, subject in enumerate(subject_list):
-    PROCESS_REPEATED_FLAG = True
+    PROCESS_REPEATED_FLAG = False
     timepoints = subject.timepoints
 
-    if not exists(subject.get_timepoint().data_path['resample']):
+    if not exists(subject.get_timepoint().get_filepath('linear_resampled_image')):
         missing_subjects.append(subject.id)
-        print(subject.get_timepoint().image_path)
+        print('[NO DATA AVAILABLE] Subject: ' + subject.get_timepoint().image_path + '.')
         continue
 
     if len(timepoints) == 1:
@@ -64,34 +66,46 @@ for it_subject, subject in enumerate(subject_list):
         continue
 
 
-
     results_dir_sbj = subject.results_dirs.get_dir('nonlinear_registration')
     tempdir = join(results_dir_sbj, 'tmp')
     if not exists(tempdir):
         makedirs(tempdir)
 
     first_repeated = 0
+    print('[INITIALIZING THE GRAPH] Registering subject: ' + subject.sid )
     for tp_ref, tp_flo in itertools.combinations(timepoints, 2):
 
-        print('Registering subject: ' + subject.sid + '. From T=' + str(tp_ref.tid) + ' to T=' + str(tp_flo.tid) + '.')
+        print('  o From T=' + str(tp_ref.tid) + ' to T=' + str(tp_flo.tid) + '.', end=' ', flush=True)
 
         ################
         # Registration #
         ################
         filename = str(tp_ref.tid) + '_to_' + str(tp_flo.tid)
-        if exists(join(results_dir_sbj, filename + '.svf.nii.gz')) and first_repeated == 0:
+        if exists(join(results_dir_sbj, filename + '.svf.nii.gz')) and first_repeated == 0 and PROCESS_REPEATED_FLAG:
             question = ' Subject: ' + subject.sid + ' has already some computed registrations in ' + \
                        results_dir_sbj + '.\n Do you want to proceed and overwrite or cancel?'
             PROCESS_REPEATED_FLAG = query_yes_no(question=question)
             first_repeated += 1
 
-        if exists(join(results_dir_sbj, filename + '.svf.nii.gz')) and not PROCESS_REPEATED_FLAG:
-            break
+        # if exists(join(results_dir_sbj, filename + '.svf.nii.gz')) and not PROCESS_REPEATED_FLAG:
+        #     break
 
 
         t_init = time.time()
-        initialize_graph_NR([tp_ref, tp_flo], results_dir=results_dir_sbj, filename=filename,
-                            vox2ras=subject.vox2ras0, tempdir=tempdir)
+        if reg_algorithm in ['standard', 'bidir']:
+            parameter_dict = configFile.get_config_dict(data_loader.image_shape)
+            parameter_dict['RESULTS_DIR'] = parameter_dict['RESULTS_DIR'] + '_' + reg_algorithm
+            initialize_graph_RegNet([tp_ref, tp_flo],  parameter_dict, results_dir=results_dir_sbj,
+                                    filename=filename, vox2ras0=subject.vox2ras0, subject_shape=subject.image_shape,
+                                    epoch='197', use_gpu=True)
+        else:
+            initialize_graph_NR([tp_ref, tp_flo], results_dir=results_dir_sbj, filename=filename,
+                                vox2ras=subject.vox2ras0, tempdir=tempdir)
 
-        print('NR elapsed time: ' + str(np.round(time.time() - t_init, 2)))
 
+        print('Elapsed time: ' + str(np.round(time.time() - t_init, 2)))
+
+    print('\n')
+
+    if not DEBUG:
+        rmdir(subject.results_dirs.get_dir('linear_resampled'))
