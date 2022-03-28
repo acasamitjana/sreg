@@ -3,48 +3,58 @@ from os.path import join
 
 import numpy as np
 
-
-from setup import REGISTRATION_DIR
-from src.utils.image_transform import ScaleNormalization, NonLinearParams, CropParams, AffineParams
+from setup import *
+from src.utils.data_loader_utils import ScaleNormalization, NonLinearParams, CropParams, AffineParams
+from database.FCIEN import CONFIG_REGISTRATION as config_fcien
+from database.MIRIAD import CONFIG_REGISTRATION as config_miriad
+from database.ADNI import CONFIG_REGISTRATION as config_adni
 
 ## Data characteristics
 
 ## Data dictionaries with RegNet parameters
-CONFIG_REGISTRATION = {
+if DB == 'FCIEN':
+    CONFIG_REGISTRATION = config_fcien
 
-    'TRANSFORM': None,
-    'VOLUME_SHAPE': None,
+elif DB == 'MIRIAD' or DB == 'MIRIAD_retest':
+    CONFIG_REGISTRATION = config_miriad
 
-    'DATA_AUGMENTATION': None,
-    'NORMALIZATION': ScaleNormalization(range=[0, 1]),
-    'AFFINE': AffineParams(rotation=[5]*3, scaling=[5]*3, translation=[5]*3),
-    'NONLINEAR': NonLinearParams(lowres_size=[9, 9, 9], lowres_strength=[0.1, 3], distribution='uniform'),
+elif DB == 'ADNI':
+    CONFIG_REGISTRATION = config_adni
 
-    'ENC_NF': [16, 32, 32, 64],
-    'DEC_NF': [64, 32, 32, 16, 16],
+else:
+    CONFIG_REGISTRATION = {
 
-    'INT_STEPS': 7,
+        'TRANSFORM': None,
+        'VOLUME_SHAPE': None,
 
-    'BATCH_SIZE': 1,
-    'N_EPOCHS': 200,
-    'LEARNING_RATE': 1e-3,
-    'EPOCH_DECAY_LR': 0,
-    'STARTING_EPOCH': 0,
+        'DATA_AUGMENTATION': None,
+        'NORMALIZATION': ScaleNormalization(range=[0, 1]),
+        'AFFINE': AffineParams(rotation=[2.5]*3, scaling=[0]*3, translation=[2]*3),
+        'NONLINEAR': NonLinearParams(lowres_shape_factor=0.04, lowres_strength=3, distribution='uniform'),
 
-    'USE_GPU': True,# Set to False if running to CPU
-    'GPU_INDICES': [0],
+        'ENC_NF': [16, 32, 32, 64],
+        'DEC_NF': [64, 32, 32, 16, 16],
 
-    'LOG_INTERVAL': 1,
-    'SAVE_MODEL_FREQUENCY': 100,
+        'INT_STEPS': 7,
 
-    'LOSS_REGISTRATION': {'name': 'NCC', 'params': {'kernel_var': [5, 5, 5], 'kernel_type': 'mean'},'lambda': 1},#, #
-    'LOSS_REGISTRATION_SMOOTHNESS': {'name': 'Grad', 'params': {'dim': 3, 'penalty': 'l2'}, 'lambda': 0.1},
+        'BATCH_SIZE': 1,
+        'N_EPOCHS': 100,
+        'LEARNING_RATE': 1e-3,
+        'EPOCH_DECAY_LR': 0,
+        'STARTING_EPOCH': 0,
 
-    'UPSAMPLE_LEVELS': 4,
-    'FIELD_TYPE': 'velocity',
+        'USE_GPU': True,# Set to False if running to CPU
+        'GPU_INDICES': [0],
 
-    'NEIGHBOR_DISTANCE': -1
-}
+        'LOG_INTERVAL': 1,
+        'SAVE_MODEL_FREQUENCY': 100,
+
+        'LOSS_REGISTRATION': {'name': 'NCC', 'params': {'kernel_var': [5]*3, 'kernel_type': 'mean'},'lambda': 1},#, #
+        'LOSS_REGISTRATION_SMOOTHNESS': {'name': 'Grad', 'params': {'dim': 3, 'penalty': 'l2'}, 'lambda': 1},#0.1},
+
+        'UPSAMPLE_LEVELS': 4,#1,#
+        'FIELD_TYPE': 'velocity',
+    }
 
 
 
@@ -59,9 +69,23 @@ def get_config_dict(volume_shape):
     loss_name = 'R' + str(config['LOSS_REGISTRATION']['lambda'])
     loss_name += '_S' + str(config['LOSS_REGISTRATION_SMOOTHNESS']['lambda'])
     loss_dir = join(loss_dir, loss_name)
-    CONFIG_REGISTRATION['RESULTS_DIR'] = join(REGISTRATION_DIR, loss_dir, 'DownFactor_' + str(config['UPSAMPLE_LEVELS']))
-    CONFIG_REGISTRATION['TRANSFORM'] = [CropParams(crop_shape=volume_shape)]
-    CONFIG_REGISTRATION['VOLUME_SHAPE'] = volume_shape
+    CONFIG_REGISTRATION['RESULTS_DIR'] = join(REGISTRATION_DIR, 'Registration', loss_dir, 'DownFactor_' + str(config['UPSAMPLE_LEVELS']))
+
+    outshape = []
+    for vs in volume_shape:
+        ratio = vs / 2**len(config['ENC_NF'])
+        if ratio - np.floor(ratio) < 0.5:
+            outshape.append(int(2**len(config['ENC_NF'])*np.floor(ratio)))
+        else:
+            outshape.append(int(2**len(config['ENC_NF'])*np.ceil(ratio)))
+
+    if DB == 'MIRIAD' or DB == 'MIRIAD_retest' or DB == 'ADNI':
+        outshape = (192, 208, 224)
+    elif DB == 'FCIEN':
+        outshape = (192, 208, 192)
+
+    CONFIG_REGISTRATION['TRANSFORM'] = [CropParams(crop_shape=tuple(outshape))]
+    CONFIG_REGISTRATION['VOLUME_SHAPE'] = tuple(outshape)
 
     return CONFIG_REGISTRATION
 

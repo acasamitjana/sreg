@@ -49,8 +49,6 @@ class SSIM(_Loss):
         else:
             return res
 
-        return res
-
 class L2_Loss(SSIM):
     def _ssim_loss(self, prediction, target, reduction='mean'):
         return F.mse_loss(prediction, target, reduction=reduction)

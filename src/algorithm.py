@@ -12,7 +12,7 @@ import gurobipy as gp
 import nibabel as nib
 from skimage.transform import resize
 
-from src.utils.io import read_affine_matrix
+from src.utils.io_utils import read_affine_matrix
 from src.callbacks import History, ModelCheckpoint, PrinterCallback
 from src.models import InstanceRigidModel
 
@@ -81,9 +81,14 @@ def init_st2(timepoints, input_dir, image_shape, se = None):
 
         proxy = nib.load(join(input_dir, filename + '.svf.nii.gz'))
         field = np.asarray(proxy.dataobj)
-        phi[0, ..., nk] = np.squeeze(resize(field[0], image_shape, anti_aliasing=True))
-        phi[1, ..., nk] = np.squeeze(resize(field[1], image_shape, anti_aliasing=True))
-        phi[2, ..., nk] = np.squeeze(resize(field[2], image_shape, anti_aliasing=True))
+        if field.shape[1:] != image_shape:
+            phi[0, ..., nk] = resize(field[0], image_shape)
+            phi[1, ..., nk] = resize(field[1], image_shape)
+            phi[2, ..., nk] = resize(field[2], image_shape)
+        else:
+            phi[0, ..., nk] = field[0]
+            phi[1, ..., nk] = field[1]
+            phi[2, ..., nk] = field[2]
 
         # Masks
         proxy = nib.load(join(input_dir, filename + '.mask.nii.gz'))
@@ -91,7 +96,6 @@ def init_st2(timepoints, input_dir, image_shape, se = None):
 
         # proxy = nib.load(join(subject_dir, sid_ref,  'mask.reoriented.nii.gz'))
         # mask_ref = (np.asarray(proxy.dataobj) > 0).astype('uint8')
-
         mask = mask_mov #* mask_ref
         # del mask_mov, mask_ref
         mask = (resize(np.double(mask), image_shape, anti_aliasing=True) > 0).astype('uint8')
@@ -110,14 +114,15 @@ def init_st2(timepoints, input_dir, image_shape, se = None):
 
 
 # Optimization of rigid transforms using pytorch
-def st2_lineal_pytorch(logR, timepoints, n_epochs, subject_shape, cost, lr, results_dir_sbj, max_iter=20, patience=5):
+def st2_lineal_pytorch(logR, timepoints, n_epochs, subject_shape, cost, lr, results_dir_sbj, max_iter=20, patience=5,
+                       verbose=True):
     #(R_log, model, optimizer, callbacks, n_epochs, timepoints):
 
     log_keys = ['loss', 'time_duration (s)']
     logger = History(log_keys)
     model_checkpoint = ModelCheckpoint(join(results_dir_sbj, 'checkpoints'), -1)
-    training_printer = PrinterCallback()
-    callbacks = [logger, model_checkpoint, training_printer]
+    callbacks = [logger, model_checkpoint]
+    if verbose: callbacks += [PrinterCallback()]
 
     model = InstanceRigidModel(subject_shape, timepoints, cost=cost, device='cpu')
     optimizer = torch.optim.LBFGS(params=model.parameters(), lr=lr, max_iter=max_iter, line_search_fn='strong_wolfe')

@@ -449,6 +449,55 @@ class VecInt(nn.Module):
 
         return output
 
+class SpatialInterpolation(nn.Module):
+    """
+    [SpatialInterpolation] represesents a spatial transformation block
+    that uses the output from the UNet to preform an grid_sample
+    https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+
+    This is copied from voxelmorph code, so for more information and credit
+    visit https://github.com/voxelmorph/voxelmorph/blob/master/pytorch/model.py
+    """
+
+    def __init__(self, mode='bilinear', padding_mode='zeros'):
+        """
+        Instiatiate the block
+            :param size: size of input to the spatial transformer block
+            :param mode: method of interpolation for grid_sampler
+        """
+        super().__init__()
+
+        self.mode = mode
+        self.padding_mode = padding_mode
+
+    def forward(self, src, new_locs, **kwargs):
+        """
+        Push the src and flow through the spatial transform block
+            :param src: the original moving image
+            :param flow: the output from the U-Net
+        """
+        if 'padding_mode' in kwargs:
+            self.padding_mode = kwargs['padding_mode']
+        if 'mode' in kwargs:
+            self.mode = kwargs['mode']
+
+        shape = src.shape[2:]
+
+        # Need to normalize grid values to [-1, 1] for resampler
+        for i in range(len(shape)):
+            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
+
+        if len(shape) == 2:
+            new_locs = new_locs.permute(0, 2, 3, 1)
+            new_locs = new_locs[..., [1, 0]]
+
+        elif len(shape) == 3:
+            new_locs = new_locs.permute(0, 2, 3, 4, 1)
+            new_locs = new_locs[..., [2, 1, 0]]
+
+        return F.grid_sample(src, new_locs, mode=self.mode, padding_mode=self.padding_mode, align_corners=True)
+
+
 class SpatialTransformer(nn.Module):
     """
     [SpatialTransformer] represesents a spatial transformation block
@@ -484,15 +533,66 @@ class SpatialTransformer(nn.Module):
             :param src: the original moving image
             :param flow: the output from the U-Net
         """
-        if 'padding_mode' in kwargs:
-            self.padding_mode = kwargs['padding_mode']
-        if 'mode' in kwargs:
-            self.mode = kwargs['mode']
+        padding_mode = kwargs['padding_mode'] if 'padding_mode' in kwargs else self.padding_mode
+        mode = kwargs['mode'] if 'mode' in kwargs else self.mode
 
         new_locs = self.grid + flow
-        shape = flow.shape[2:]
+        shape = src.shape[2:]
 
+        # Need to normalize grid values to [-1, 1] for resampler
+        for i in range(len(shape)):
+            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
 
+        if len(shape) == 2:
+            new_locs = new_locs.permute(0, 2, 3, 1)
+            # new_locs = new_locs[..., [1, 0]]
+
+        elif len(shape) == 3:
+            new_locs = new_locs.permute(0, 2, 3, 4, 1)
+            new_locs = new_locs[..., [2, 1, 0]]
+
+        return F.grid_sample(src, new_locs, mode=mode, padding_mode=padding_mode, align_corners=True)
+
+class SpatialTransformerCombined(SpatialTransformer):
+    """
+    [SpatialTransformer] represesents a spatial transformation block
+    that uses the output from the UNet to preform an grid_sample
+    https://pytorch.org/docs/stable/nn.functional.html#grid-sample
+
+    This is copied from voxelmorph code, so for more information and credit
+    visit https://github.com/voxelmorph/voxelmorph/blob/master/pytorch/model.py
+    """
+
+    def _get_field(self, fields):
+        affine = fields[0]
+        flow = fields[1]
+
+        batch_size = flow.shape[0]
+        size = flow.shape[2:]
+        ndims = len(size)
+
+        grid = self.grid + flow
+        flat_grid = torch.reshape(grid, (ndims,-1))
+        ones_vec = torch.ones((1, np.prod(size))).type(torch.FloatTensor)
+        flat_ones_grid = torch.cat((flat_grid, ones_vec), dim=0)
+
+        # compute locations
+        loc_matrix = torch.matmul(affine, flat_ones_grid)  # N x nb_voxels
+        loc = torch.reshape(loc_matrix[:, :ndims], [batch_size, ndims] + list(size))  # *volshape x N
+
+        return loc
+
+    def forward(self, src, flow, **kwargs):
+        """
+        Push the src and flow through the spatial transform block
+            :param src: the original moving image
+            :param flow: the output from the U-Net
+        """
+        padding_mode = kwargs['padding_mode'] if 'padding_mode' in kwargs else self.padding_mode
+        mode = kwargs['mode'] if 'mode' in kwargs else self.mode
+
+        new_locs = self._get_field(flow)
+        shape = new_locs[2:]
         # Need to normalize grid values to [-1, 1] for resampler
         for i in range(len(shape)):
             new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
@@ -505,7 +605,7 @@ class SpatialTransformer(nn.Module):
             new_locs = new_locs.permute(0, 2, 3, 4, 1)
             new_locs = new_locs[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs, mode=self.mode, padding_mode=self.padding_mode, align_corners=True)
+        return F.grid_sample(src, new_locs, mode=mode, padding_mode=padding_mode, align_corners=True)
 
 class SpatialTransformerAffine(nn.Module):
     """
@@ -555,7 +655,6 @@ class SpatialTransformerAffine(nn.Module):
         ndims = len(self.size)
         vol_shape = self.size
 
-
         # compute locations
         loc_matrix = torch.matmul(affine_matrix, self.mesh_matrix)  # N x nb_voxels
         loc = torch.reshape(loc_matrix[:,:ndims], [batch_size, ndims] + list(vol_shape))  # *volshape x N
@@ -569,8 +668,8 @@ class SpatialTransformerAffine(nn.Module):
             :param flow: the output from the U-Net [batch_size, n_dims, *volshape]
         """
 
-        if 'mode' in kwargs:
-            self.mode = kwargs['mode']
+        padding_mode = kwargs['padding_mode'] if 'padding_mode' in kwargs else self.padding_mode
+        mode = kwargs['mode'] if 'mode' in kwargs else self.mode
 
         affine_matrix = affine_matrix.type(self.torch_dtype)
 
@@ -595,7 +694,7 @@ class SpatialTransformerAffine(nn.Module):
             new_locs = new_locs[..., [2, 1, 0]]
 
 
-        return F.grid_sample(src, new_locs, mode=self.mode, padding_mode=self.padding_mode)
+        return F.grid_sample(src, new_locs, mode=mode, padding_mode=padding_mode)
 
 class RescaleTransform(nn.Module):
     """
